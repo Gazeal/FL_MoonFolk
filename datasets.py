@@ -152,6 +152,7 @@ class ImageFolder_custom(DatasetFolder):
         self.train = train
         self.transform = transform
         self.target_transform = target_transform
+        print("-----", self.root)
 
         imagefolder_obj = ImageFolder(self.root, self.transform, self.target_transform)
         self.loader = imagefolder_obj.loader

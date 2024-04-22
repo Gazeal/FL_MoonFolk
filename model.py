@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 import torchvision.models as models
-from resnetcifar import ResNet18_cifar10, ResNet50_cifar10
+#from resnetcifar import ResNet18_cifar10, ResNet50_cifar10
 
 #import pytorch_lightning as pl
 
@@ -161,8 +161,9 @@ class SimpleCNN_header(nn.Module):
 
         x = self.pool(self.relu(self.conv1(x)))
         x = self.pool(self.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
-
+        #print(x.shape)
+        x = x.view(-1, 16 * 13 * 13)
+        #print(x.shape)
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
         # x = self.fc3(x)
@@ -550,7 +551,7 @@ class ModelFedCon(nn.Module):
             self.features = MLP_header()
             num_ftrs = 512
         elif base_model == 'simple-cnn':
-            self.features = SimpleCNN_header(input_dim=(16 * 5 * 5), hidden_dims=[120, 84], output_dim=n_classes)
+            self.features = SimpleCNN_header(input_dim=(16 * 13 * 13), hidden_dims=[120, 84], output_dim=n_classes)
             num_ftrs = 84
         elif base_model == 'simple-cnn-mnist':
             self.features = SimpleCNNMNIST_header(input_dim=(16 * 4 * 4), hidden_dims=[120, 84], output_dim=n_classes)
@@ -647,4 +648,61 @@ class ModelFedCon_noheader(nn.Module):
 
         y = self.l3(h)
         return h, h, y
+
+import argparse
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, default='resnet50', help='neural network used in training')
+    parser.add_argument('--dataset', type=str, default='cifar100', help='dataset used for training')
+    parser.add_argument('--net_config', type=lambda x: list(map(int, x.split(', '))))
+    parser.add_argument('--partition', type=str, default='homo', help='the data partitioning strategy')
+    parser.add_argument('--batch-size', type=int, default=64, help='input batch size for training (default: 64)')
+    parser.add_argument('--lr', type=float, default=0.1, help='learning rate (default: 0.1)')
+    parser.add_argument('--epochs', type=int, default=5, help='number of local epochs')
+    parser.add_argument('--n_parties', type=int, default=2, help='number of workers in a distributed cluster')
+    parser.add_argument('--alg', type=str, default='fedavg',
+                        help='communication strategy: fedavg/fedprox')
+    parser.add_argument('--comm_round', type=int, default=50, help='number of maximum communication roun')
+    parser.add_argument('--init_seed', type=int, default=0, help="Random seed")
+    parser.add_argument('--dropout_p', type=float, required=False, default=0.0, help="Dropout probability. Default=0.0")
+    parser.add_argument('--datadir', type=str, required=False, default="./data/", help="Data directory")
+    parser.add_argument('--reg', type=float, default=1e-5, help="L2 regularization strength")
+    parser.add_argument('--logdir', type=str, required=False, default="./logs/", help='Log directory path')
+    parser.add_argument('--modeldir', type=str, required=False, default="./models/", help='Model directory path')
+    parser.add_argument('--beta', type=float, default=0.5,
+                        help='The parameter for the dirichlet distribution for data partitioning')
+    parser.add_argument('--device', type=str, default='cuda:0', help='The device to run the program')
+    parser.add_argument('--log_file_name', type=str, default=None, help='The log file name')
+    parser.add_argument('--optimizer', type=str, default='sgd', help='the optimizer')
+    parser.add_argument('--mu', type=float, default=1, help='the mu parameter for fedprox or moon')
+    parser.add_argument('--out_dim', type=int, default=256, help='the output dimension for the projection layer')
+    parser.add_argument('--temperature', type=float, default=0.5, help='the temperature parameter for contrastive loss')
+    parser.add_argument('--local_max_epoch', type=int, default=100, help='the number of epoch for local optimal training')
+    parser.add_argument('--model_buffer_size', type=int, default=1, help='store how many previous models for contrastive loss')
+    parser.add_argument('--pool_option', type=str, default='FIFO', help='FIFO or BOX')
+    parser.add_argument('--sample_fraction', type=float, default=1.0, help='how many clients are sampled in each round')
+    parser.add_argument('--load_model_file', type=str, default=None, help='the model to load as global model')
+    parser.add_argument('--load_pool_file', type=str, default=None, help='the old model pool path to load')
+    parser.add_argument('--load_model_round', type=int, default=None, help='how many rounds have executed for the loaded model')
+    parser.add_argument('--load_first_net', type=int, default=1, help='whether load the first net as old net or not')
+    parser.add_argument('--normal_model', type=int, default=0, help='use normal model or aggregate model')
+    parser.add_argument('--loss', type=str, default='contrastive')
+    parser.add_argument('--save_model',type=int,default=0)
+    parser.add_argument('--use_project_head', type=int, default=1)
+    parser.add_argument('--server_momentum', type=float, default=0, help='the server momentum (FedAvgM)')
+    args = parser.parse_args()
+    return args
+
+# def test_model(): 
+#     args = get_args()
+#     model = 'simple-cnn'
+#     out_dim = 256
+#     n_classes = 200
+#     # = 
+#     net = ModelFedCon(model, out_dim, n_classes, args.net_config)
+#     inp = torch.randn(32,3,64,64)
+#     out = net(inp) 
+#     print(out.shape)
+
+# test_model()
 
