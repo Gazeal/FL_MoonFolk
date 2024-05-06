@@ -30,6 +30,11 @@ def eval_step(engine, batch):
 default_evaluator = Engine(eval_step)
 
 def  calculate_miou(pred,label): 
+    if len(pred.shape)==4 and len(label.shape)==4: 
+        x,y,z,t = pred.shape 
+        pred=pred.reshape(x*y,z,t)
+        label=label.reshape(x*y,z,t)
+    #print(pred.shape, label.shape)
     default_evaluator = Engine(eval_step)
     b,h,w = pred.shape 
     pred = pred.reshape(b,h*w) 
