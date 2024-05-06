@@ -11,6 +11,7 @@ from os.path import splitext, isfile, join
 from pathlib import Path
 from torch.utils.data import Dataset
 from tqdm import tqdm
+import cv2
 
 
 def load_image(filename):
@@ -35,42 +36,40 @@ def unique_mask_values(idx, mask_dir, mask_suffix):
         raise ValueError(f'Loaded masks should have 2 or 3 dimensions, found {mask.ndim}')
 
 
-class BasicDataset(Dataset):
-    def __init__(self, images_dir: str, mask_dir: str, scale: float = 1.0, mask_suffix: str = ''):
+class MedDataset(Dataset):
+    def __init__(self, images_dir: str, mask_dir: str, domain: str ):
         self.images_dir = Path(images_dir)
         self.mask_dir = Path(mask_dir)
-        assert 0 < scale <= 1, 'Scale must be between 0 and 1'
-        self.scale = scale
-        self.mask_suffix = mask_suffix
+
+        #self.mask_suffix = mask_suffix
 
         self.ids = listdir(self.images_dir)# [splitext(file)[0] for file in listdir(images_dir) if isfile(join(images_dir, file)) and not file.startswith('.')]
-        #print("ID 0: ", self.ids[0])
+        
         if not self.ids:
             raise RuntimeError(f'No input file found in {images_dir}, make sure you put your images there')
 
         logging.info(f'Creating dataset with {len(self.ids)} examples')
         logging.info('Scanning mask files to determine unique values')
-        # with Pool() as p:
-        #     unique = list(tqdm(
-        #         p.imap(partial(unique_mask_values, mask_dir=self.mask_dir, mask_suffix=self.mask_suffix), self.ids),
-        #         total=len(self.ids)
-        #     ))
-
-        self.mask_values =list([0,1]) #list(sorted(np.unique(np.concatenate(unique), axis=0).tolist()))
+        self.domain = domain 
+        if self.domain in ["animal", "phantom"]:
+            self.mask_values =list([0,1,2]) 
+        else:  #sim , real
+            self.mask_values = list([0,1])
         logging.info(f'Unique mask values: {self.mask_values}')
 
     def __len__(self):
         return len(self.ids)
 
     @staticmethod
-    def preprocess(mask_values, pil_img, scale, is_mask):
-        w, h = pil_img.size
+    def preprocess(mask_values, pil_img,  is_mask):
         newW, newH = 256,256
         assert newW > 0 and newH > 0, 'Scale is too small, resized images would have no pixel'
         pil_img = pil_img.resize((newW, newH), resample=Image.NEAREST if is_mask else Image.BICUBIC)
         img = np.asarray(pil_img)
+        
 
         if is_mask:
+            img = np.where(img>128,1,img)
             mask = np.zeros((newH, newW), dtype=np.int64)
             for i, v in enumerate(mask_values):
                 if img.ndim == 2:
@@ -93,32 +92,30 @@ class BasicDataset(Dataset):
 
     def __getitem__(self, idx):
         image_name = self.ids[idx]
-        # mask_file = list(self.mask_dir.glob(name  + 'npy'))
-        # img_file = list(self.images_dir.glob(name + 'png'))
-        mask_name = image_name.split(".")[0] + '.png'
-
         image_dir = join(self.images_dir, image_name)
-        mask_dir = join(self.mask_dir,mask_name)
+        img = Image.open(image_dir)
+        if self.domain== "animal" or self.domain == "phantom": 
+            mask_name = image_name.replace("png", "npy")
+            mask_dir = join(self.mask_dir,mask_name)
+            mask = np.load(mask_dir)
+            mask = Image.fromarray(mask)
+            
+        elif self.domain == 'sim': 
+            mask_name = image_name.split(".")[0] + "_mask.png"
+            mask_dir = join(self.mask_dir,mask_name)
+            mask = Image.open(mask_dir)
+            img = Image.open(image_dir).convert("RGB")
+        else : # real
+            mask_name = image_name
+            mask_dir = join(self.mask_dir,mask_name)
+            mask = Image.open(mask_dir)
 
-        
-
-        #assert len(img_file) == 1, f'Either no image or multiple images found for the ID {name}: {img_file}'
-        #assert len(mask_file) == 1, f'Either no mask or multiple masks found for the ID {name}: {mask_file}'
-        #mask = Image.fromarray(np.load(mask_dir))#(mask_file[0])
-        mask = Image.open(mask_dir)
-        #mask = np.array(mask) 
-        # mask = mask[:,:,0]
-        # mask = (mask>0).astype(np.uint8)
-        # mask = Image.fromarray(mask)
-        img = Image.open(image_dir)# load_image(img_file[0])
-        # img = np.array(img)[:,:,:3]
-        #img = Image.fromarray(img)
 
         assert img.size == mask.size, \
             f'Image and mask {image_name} should be the same size, but are {img.size} and {mask.size}'
        # print(img.shape, mask.shape)
-        img = self.preprocess(self.mask_values, img, self.scale, is_mask=False)
-        mask = self.preprocess(self.mask_values, mask, self.scale, is_mask=True)
+        img = self.preprocess(self.mask_values, img, is_mask=False)
+        mask = self.preprocess(self.mask_values, mask,  is_mask=True)
         return {
             'image': torch.as_tensor(img.copy()).float().contiguous(),
             'mask': torch.as_tensor(mask.copy()).long().contiguous(),
@@ -126,6 +123,3 @@ class BasicDataset(Dataset):
         }
 
 
-class CarvanaDataset(BasicDataset):
-    def __init__(self, images_dir, mask_dir, scale=1):
-        super().__init__(images_dir, mask_dir, scale, mask_suffix='_mask')
